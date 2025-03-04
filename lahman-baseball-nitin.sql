@@ -132,16 +132,52 @@ ORDER BY
 --champion; determine why this is the case. Then redo your query, excluding the problem year. How often from 1970 to 2016 was it the case
 --that a team with the most wins also won the world series? What percentage of the time?
 
+with Maxwins as (
+select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as team_max_wins_for_Year
+from teams where yearid >= 1970 order by yearid,lgid,rank
+)
+select * from (select yearid,name,w as wins, wswin as worldSeries,'MAX_WON_BUT_LOST_WORLDSERIES' as TEXT from Maxwins
+where w = team_max_wins_for_Year
+and wswin = 'N'
+order by w desc 
+limit 1)
+union
+select * from (select yearid,name,w as wins, wswin as worldSeries,'MIN_WON_BUT_WON_WORLDSERIES' as TEXT from Maxwins
+where w <> team_max_wins_for_Year
+and wswin = 'Y'
+order by w asc
+limit 1);
+
+
+
+
+
+with wins as (
+select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as max_wins_for_Year,
+min(w) over(Partition by yearid) as min_wins_for_year
+from teams where yearid >= 1970 order by yearid,lgid,rank
+)
+select * from wins
+where w = min_wins_for_year
+and wswin = 'Y'
+order by w desc 
+limit 1
+;
+
+
+
+
+select yearid,teamid,lgid,rank,w,wswin from teams where yearid >= 1970 and teamid = 'BAL' order by yearid,lgid,rank;
 
 select sb,cs, sb+cs, round(cast(sb as decimal)/(sb+cs) * 100 ,2) ,16/24 from batting where playerid='doziebr01' and yearid = 2016;
 
 select  *from pitching;
 
-select * from appearances where yearid > 1919 order by 1;
+select * from appearances where yearid > 1970 order by 1;
 
 select * from salaries where playerid = 'priceda01' ;
 
-select *  from teams where yearid > 1919 order by 1,2,rank;
+select *  from teams where yearid >= 1970 order by 1,2,rank;
 
 select * from people where nameFirst = 'Brian' and nameLast = 'Dozier';
 
