@@ -148,26 +148,40 @@ and wswin = 'Y'
 order by w asc
 limit 1);
 
+--skip year 1981
 
+with Maxwins as (
+select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as team_max_wins_for_Year
+from teams where yearid >= 1970 and yearid <> 1981 order by yearid,lgid,rank
+)
+select * from (select yearid,name,w as wins, wswin as worldSeries,'MAX_WON_BUT_LOST_WORLDSERIES' as TEXT from Maxwins
+where w = team_max_wins_for_Year
+and wswin = 'N'
+order by w desc 
+limit 1)
+union
+select * from (select yearid,name,w as wins, wswin as worldSeries,'MIN_WON_BUT_WON_WORLDSERIES' as TEXT from Maxwins
+where w <> team_max_wins_for_Year
+and wswin = 'Y'
+order by w asc
+limit 1);
 
-
-
-with wins as (
-select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as max_wins_for_Year,
-min(w) over(Partition by yearid) as min_wins_for_year
+-- Last part - 
+--How often from 1970 to 2016 was it the case
+--that a team with the most wins also won the world series? What percentage of the time?
+with Maxwins as (
+select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as team_max_wins_for_Year
 from teams where yearid >= 1970 order by yearid,lgid,rank
 )
-select * from wins
-where w = min_wins_for_year
-and wswin = 'Y'
-order by w desc 
-limit 1
-;
+select wswin,count(*) as totalwswin,
+round((COUNT(*) * 100.0) / SUM(COUNT(*)) OVER () ,2)AS percentage
+from Maxwins
+where w = team_max_wins_for_Year
+--and wswin = 'Y'
+group by wswin
+order by wswin;
 
-
-
-
-select yearid,teamid,lgid,rank,w,wswin from teams where yearid >= 1970 and teamid = 'BAL' order by yearid,lgid,rank;
+select * from teams where yearid >= 1970  order by yearid,lgid,rank;
 
 select sb,cs, sb+cs, round(cast(sb as decimal)/(sb+cs) * 100 ,2) ,16/24 from batting where playerid='doziebr01' and yearid = 2016;
 
