@@ -169,27 +169,219 @@ limit 1);
 -- Last part - 
 --How often from 1970 to 2016 was it the case
 --that a team with the most wins also won the world series? What percentage of the time?
-with Maxwins as (
-select yearid,teamid,name,lgid,rank,w,wswin, max(w) over(Partition by yearid) as team_max_wins_for_Year
-from teams where yearid >= 1970 order by yearid,lgid,rank
-)
-select wswin,count(*) as totalwswin,
-round((COUNT(*) * 100.0) / SUM(COUNT(*)) OVER () ,2)AS percentage
-from Maxwins
-where w = team_max_wins_for_Year
---and wswin = 'Y'
-group by wswin
-order by wswin;
+WITH
+	MAXWINS AS (
+		SELECT
+			YEARID,
+			TEAMID,
+			NAME,
+			LGID,
+			RANK,
+			W,
+			WSWIN,
+			MAX(W) OVER (
+				PARTITION BY
+					YEARID
+			) AS TEAM_MAX_WINS_FOR_YEAR
+		FROM
+			TEAMS
+		WHERE
+			YEARID >= 1970
+		ORDER BY
+			YEARID,
+			LGID,
+			RANK
+	)
+SELECT
+	WSWIN,
+	COUNT(*) AS TOTALWSWIN,
+	ROUND((COUNT(*) * 100.0) / SUM(COUNT(*)) OVER (), 2) AS PERCENTAGE
+FROM
+	MAXWINS WHERE
+	W = TEAM_MAX_WINS_FOR_YEAR
+	--and wswin = 'Y'
+GROUP BY
+	WSWIN
+ORDER BY
+	WSWIN;
 
-select * from teams where yearid >= 1970  order by yearid,lgid,rank;
+
+--6 Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? 
+--Give their full name and the teams that they were managing when they won the award.
+
+
+SELECT DISTINCT
+	P.NAMEFIRST,
+	P.NAMELAST,
+	T.NAME,
+	M1.YEARID,
+	M1.PLAYERID
+FROM
+	AWARDSMANAGERS M1
+	INNER JOIN MANAGERS MG ON MG.PLAYERID = M1.PLAYERID
+	AND MG.YEARID = M1.YEARID
+	INNER JOIN TEAMS T ON MG.TEAMID = T.TEAMID and MG.YEARID = T.YEARID
+	INNER JOIN PEOPLE P ON M1.PLAYERID = P.PLAYERID
+WHERE
+	M1.AWARDID = 'TSN Manager of the Year'
+	AND M1.LGID in('NL','AL')
+	AND EXISTS (
+		SELECT
+			'x'
+		FROM
+			AWARDSMANAGERS M2
+		WHERE
+			M2.AWARDID = M1.AWARDID
+			AND M2.LGID in( 'AL','NL')
+			and M2.LGID <> M1.LGID
+			and M1.playerid = m2.playerid
+	)
+
+--7. Which pitcher was the least efficient in 2016 in terms of salary / strikeouts? Only consider pitchers who started at least 10 games (across all teams). 
+--Note that pitchers often play for more than one team in a season, so be sure that you are counting all stats for each player.
+
+WITH
+	PITCHERS AS (
+		SELECT DISTINCT
+			PLAYERID,
+			YEARID,
+			TEAMID,
+			GS AS TOT_GAMES_STARTED
+		FROM
+			PITCHING
+		WHERE
+			YEARID = 2016
+			AND GS >= 10
+	),
+	P2 AS (
+		SELECT DISTINCT
+			PT.PLAYERID,
+			PT.YEARID,
+			PT.TEAMID,
+			S.SALARY,
+			PT.SO,
+			MIN(S.SALARY) OVER () AS MIN_SALARY,
+			MIN(PT.SO) OVER () AS MIN_SO
+		FROM
+			PITCHERS PR
+			INNER JOIN PITCHING PT ON PT.PLAYERID = PR.PLAYERID
+			AND PR.YEARID = PT.YEARID
+			AND PR.TEAMID = PT.TEAMID
+			INNER JOIN SALARIES S ON S.PLAYERID = PR.PLAYERID
+			AND S.TEAMID = PR.TEAMID
+			AND S.YEARID = PR.YEARID
+	)
+SELECT
+	*
+FROM
+	P2
+WHERE
+	SALARY = MIN_SALARY
+	OR SO = MIN_SO
+ORDER BY
+	SALARY,
+	SO;
+
+--8.Find all players who have had at least 3000 career hits. Report those players' names, total number of hits, and the year they were inducted into the hall of
+--fame (If they were not inducted into the hall of fame, put a null in that column.) Note that a player being inducted into the hall of fame is indicated by a 'Y' in the inducted 
+--column of the halloffame table.
+WITH
+	HITS AS (
+		SELECT
+			PLAYERID,
+			SUM(H) AS CAREER_HITS
+		FROM
+			BATTING
+		GROUP BY
+			PLAYERID
+		HAVING
+			SUM(H) >= 3000
+	)
+SELECT DISTINCT
+	H.PLAYERID,
+	P.NAMEFIRST,
+	P.NAMELAST,
+	H.CAREER_HITS,
+	HF.YEARID AS HOF_INDUCTED_YEAR
+FROM
+	HITS H
+	INNER JOIN PEOPLE P USING (PLAYERID)
+	LEFT JOIN HALLOFFAME HF ON HF.PLAYERID = H.PLAYERID
+	AND HF.INDUCTED = 'Y'
+	AND HF.CATEGORY = 'Player'
+ORDER BY
+	CAREER_HITS DESC;
+
+--9. Find all players who had at least 1,000 hits for two different teams. Report those players' full names.
+WITH
+	HITS AS (
+		SELECT
+			PLAYERID,
+			TEAMID,
+			SUM(H)
+		FROM
+			BATTING
+		GROUP BY
+			PLAYERID,
+			TEAMID
+		HAVING
+			SUM(H) >= 1000
+		ORDER BY
+			1,
+			2
+	)
+SELECT
+	NAMEFIRST,
+	NAMELAST
+FROM
+	(
+		SELECT
+			H.PLAYERID,
+			P.NAMEFIRST,
+			P.NAMELAST,
+			COUNT(*)
+		FROM
+			HITS H
+			INNER JOIN PEOPLE P ON H.PLAYERID = P.PLAYERID
+		GROUP BY
+			H.PLAYERID,
+			P.NAMEFIRST,
+			P.NAMELAST
+		HAVING
+			COUNT(*) > 1
+	) A;
+
+
+--10.Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for at least 10 years, 
+--and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs they hit in 2016.
+
+
+
+
+--Rough Work
+select * from batting where playerid  = 'aaronha01' and teamid = 'ATL';
+
+select * from HallofFame where inducted = 'Y' and category = 'Player';
+
+select  * from pitching where playerid='garcija02' and yearid = 2016 order by 1;
+
+select * from salaries where playerid = 'garcija02' ;
+
+select * from awardsmanagers where  playerid='lanieha01';
+
+select * from managers where playerid='lanieha01';
+
+select * from people where playerid='garcija02';
+
+select * from teams where yearid = 1986 and playerid='lanieha01' order by yearid,lgid,rank;
 
 select sb,cs, sb+cs, round(cast(sb as decimal)/(sb+cs) * 100 ,2) ,16/24 from batting where playerid='doziebr01' and yearid = 2016;
 
-select  *from pitching;
+select  * from pitching;
 
 select * from appearances where yearid > 1970 order by 1;
 
-select * from salaries where playerid = 'priceda01' ;
+select * from salaries where playerid = 'garcija02' ;
 
 select *  from teams where yearid >= 1970 order by 1,2,rank;
 
