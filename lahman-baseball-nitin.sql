@@ -6,11 +6,12 @@ WITH
 		SELECT DISTINCT
 			P.NAMEFIRST,
 			P.NAMELAST,
+			s.yearid,
 			S.SALARY AS TOT_SALARY
 		FROM
 			PEOPLE P
 			INNER JOIN COLLEGEPLAYING CP USING (PLAYERID)
-			INNER JOIN SALARIES S ON S.PLAYERID = P.PLAYERID
+			INNER JOIN SALARIES S ON S.PLAYERID = P.PLAYERID 
 		WHERE
 			CP.SCHOOLID = 'vandy'
 			--and p.playerid = 'priceda01' 
@@ -99,6 +100,24 @@ FROM
 ORDER BY
 	LOWER_YEAR;
 
+--ZACH' Query
+WITH years AS (
+	SELECT generate_series(1920, 2020, 10) AS decades
+	)
+SELECT decades, ROUND(SUM(so) * 1.0/SUM(g), 2) AS avg_strikeouts_per_game
+FROM teams AS t
+INNER JOIN years
+ON t.yearid < (decades + 10) AND t.yearid >= decades
+GROUP BY decades;
+
+WITH years AS (
+	SELECT generate_series(1920, 2020, 10) AS decades
+	)
+SELECT decades, ROUND(SUM(hr) * 1.0/SUM(g), 2) AS avg_homeruns_per_game
+FROM teams AS t
+INNER JOIN years
+ON t.yearid < (decades + 10) AND t.yearid >= decades
+GROUP BY decades;
 
 --4.Find the player who had the most success stealing bases in 2016, where success is measured as the percentage of stolen base attempts
 --which are successful. (A stolen base attempt results either in a stolen base or being caught stealing.) Consider only players who 
@@ -122,8 +141,7 @@ GROUP BY
 	P.NAMELAST,
 	B.PLAYERID
 HAVING
-	SUM(SB + CS) > 0
-	AND SUM(SB + CS) >= 20
+ SUM(SB + CS) >= 20
 ORDER BY
 	STOLEN_BASE_PERCENTAGE DESC;
 
@@ -237,50 +255,33 @@ WHERE
 			and M1.playerid = m2.playerid
 	)
 
---7. Which pitcher was the least efficient in 2016 in terms of salary / strikeouts? Only consider pitchers who started at least 10 games (across all teams). 
---Note that pitchers often play for more than one team in a season, so be sure that you are counting all stats for each player.
+--7. Which pitcher was the least efficient in 2016 in terms of salary / strikeouts? Only consider pitchers who started at least 10 games 
+--(across all teams). Note that pitchers often play for more than one team in a season, so be sure that you are counting all stats for 
+--each player.
 
-WITH
-	PITCHERS AS (
-		SELECT DISTINCT
-			PLAYERID,
-			YEARID,
-			TEAMID,
-			GS AS TOT_GAMES_STARTED
-		FROM
-			PITCHING
-		WHERE
-			YEARID = 2016
-			AND GS >= 10
-	),
-	P2 AS (
-		SELECT DISTINCT
-			PT.PLAYERID,
-			PT.YEARID,
-			PT.TEAMID,
-			S.SALARY,
-			PT.SO,
-			MIN(S.SALARY) OVER () AS MIN_SALARY,
-			MIN(PT.SO) OVER () AS MIN_SO
-		FROM
-			PITCHERS PR
-			INNER JOIN PITCHING PT ON PT.PLAYERID = PR.PLAYERID
-			AND PR.YEARID = PT.YEARID
-			AND PR.TEAMID = PT.TEAMID
-			INNER JOIN SALARIES S ON S.PLAYERID = PR.PLAYERID
-			AND S.TEAMID = PR.TEAMID
-			AND S.YEARID = PR.YEARID
-	)
-SELECT
-	*
+
+			
+
+with cte1 as (
+select pt.playerid,sum(so) as strikeOuts, sum(gs) as game_started
 FROM
-	P2
-WHERE
-	SALARY = MIN_SALARY
-	OR SO = MIN_SO
-ORDER BY
-	SALARY,
-	SO;
+			PITCHING pt
+			where pt.yearid = 2016
+			group by 1
+),
+cte2 as (
+select playerid, sum(salary) as salary
+FROM
+			salaries 
+where yearid = 2016  
+group by PLAYERID
+)
+select cte1.playerid,round(cast(cte2.salary/cte1.strikeOuts as decimal), 2) as efficient
+from cte1 inner join cte2 on cte1.playerid = cte2.playerid
+where cte1.game_started >= 10
+order by 2 desc;
+
+
 
 --8.Find all players who have had at least 3000 career hits. Report those players' names, total number of hits, and the year they were inducted into the hall of
 --fame (If they were not inducted into the hall of fame, put a null in that column.) Note that a player being inducted into the hall of fame is indicated by a 'Y' in the inducted 
@@ -310,7 +311,7 @@ FROM
 	AND HF.INDUCTED = 'Y'
 	AND HF.CATEGORY = 'Player'
 ORDER BY
-	CAREER_HITS DESC;
+	CAREER_HITS asc;
 
 --9. Find all players who had at least 1,000 hits for two different teams. Report those players' full names.
 WITH
@@ -349,11 +350,39 @@ FROM
 			P.NAMELAST
 		HAVING
 			COUNT(*) > 1
-	) A;
+	) A order by 1;
 
 
---10.Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for at least 10 years, 
---and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs they hit in 2016.
+--10.Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for 
+--at least 10 years, and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs 
+--they hit in 2016.
+
+with players2016 as (
+select b1.playerid
+from batting b1
+where exists (select 'x' from batting b2 where b2.playerid = b1.playerid and b2.hr > 0 and b2.yearid = 2016 )
+group by b1.playerid
+having count(distinct b1.yearid) >=10
+),
+cte2 as (
+select playerid,yearid,teamid,home_runs,max(home_runs) over(partition by playerid) as max_HOME_RUN from
+(select playerid,yearid,teamid,max(hr) as home_runs
+from batting where playerid in (select * from players2016) 
+group by playerid,yearid,teamid
+order by 1,2,4
+)
+)
+select p.nameFirst,p.nameLast,c.playerid,c.yearid,c.teamid,c.max_HOME_RUN from cte2 c
+inner join people p on p.playerid = c.playerid
+where c.yearid =  2016 and c.home_runs = c.max_HOME_RUN
+order by max_HOME_RUN desc;
+
+
+
+
+
+
+
 
 
 
@@ -371,7 +400,7 @@ select * from awardsmanagers where  playerid='lanieha01';
 
 select * from managers where playerid='lanieha01';
 
-select * from people where playerid='garcija02';
+select * from people where playerid='rayro02';
 
 select * from teams where yearid = 1986 and playerid='lanieha01' order by yearid,lgid,rank;
 
